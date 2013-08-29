@@ -54,6 +54,7 @@ typedef struct {
     int validate_next;
     int validate_count;
     int searched_for_end;
+    int64_t last_dts[2]; // last dts for each stream (audio, video)
 } FLVContext;
 
 static int flv_probe(AVProbeData *p)
@@ -571,6 +572,10 @@ static int flv_read_metabody(AVFormatContext *s, int64_t next_pos)
 static int flv_read_header(AVFormatContext *s)
 {
     int offset, flags;
+    FLVContext *flv = s->priv_data;
+
+    flv->last_dts[0] = -1; // initialize
+    flv->last_dts[1] = -1;
 
     avio_skip(s->pb, 4);
     flags = avio_r8(s->pb);
@@ -930,7 +935,16 @@ retry_duration:
         goto leave;
     }
 
+    if (stream_type == FLV_STREAM_TYPE_AUDIO || stream_type == FLV_STREAM_TYPE_VIDEO) {
+      int stream_idx = (stream_type == FLV_STREAM_TYPE_AUDIO) ? 0 : 1;
+      if (dts <= flv->last_dts[stream_idx]) {
+        dts = flv->last_dts[stream_idx] + 1;
+      }
+      flv->last_dts[stream_idx] = dts;
+    }
+
     ret = av_get_packet(s->pb, pkt, size);
+
     if (ret < 0)
         return ret;
     pkt->dts          = dts;
